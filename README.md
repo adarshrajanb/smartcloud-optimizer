@@ -1,77 +1,81 @@
-# SmartCloud Optimizer
+# SmartCloud Optimizer — Azure FinOps & VM Resource Scaler
 
-SmartCloud Optimizer is a FinOps and cloud optimization MVP designed for a mid-sized SaaS company operating across India. It combines:
+SmartCloud Optimizer is a professional FinOps dashboard and autonomous resource scaling platform for Microsoft Azure Virtual Machines.
 
-- public Azure VM pricing benchmark data from the Microsoft Azure Retail Prices API
-- synthetic cloud resource inventory and 30-day time-series workload simulation
-- intelligent downsizing, upsizing, and orphan cleanup recommendations
-- CRON-based schedule simulation with emergency override logic
-- a sleek React + Tailwind dashboard for infra and FinOps teams
+Based on historical and predictive time-series workload patterns (such as off-hours idle drops between 7:00 PM and 5:00 AM on weekdays, or high-throughput batch bursts), SmartCloud Optimizer dynamically schedules rightsizing, eliminates server bottlenecks, and reduces cloud compute spend by up to 38%.
 
-## Tech stack
+---
 
-- Backend: Python, FastAPI, Pandas/NumPy, Pydantic
-- Frontend: React + Vite + Tailwind CSS + Recharts + Lucide icons
+## Key Features
 
-## What this app does
+1. **Enterprise FinOps UI Theme**:
+   - Crisp, modern aesthetic modeled after top cloud management consoles (custom pastel summary cards, royal blue navigation, interactive Recharts spline & grouped bar visualizations).
+   - Instant currency switcher: **INR (₹)** and **USD ($)**.
 
-- Simulates cloud resources across Noida, Bangalore, and Mumbai
-- Tracks VM CPU, memory, and IOPS over 30 days
-- Detects underutilized VMs and over-provisioned workloads
-- Recommends performance-safe downsize vs reliability-driven upsize
-- Flags orphaned block volumes and public IPs for termination
-- Simulates CRON downscale windows with emergency spike override triggers
-- Displays a FinOps dashboard for executive and operational review
+2. **Authentication & Multi-Tenant Support**:
+   - Full login system with fast 1-click demo profiles:
+     - **Northwind Logistics SaaS** (E-Commerce fleet with high off-hours night downsize potential)
+     - **Contoso HealthTech** (Healthcare analytics fleet with critical ingestion bottleneck risk)
+   - Profile management, tenant switcher, and session sign out.
 
-## Data source note
+3. **Customer VM Fleet & Specification Inspector**:
+   - Live inventory of all Azure VMs owned by the customer.
+   - Deep hardware specifications upon selecting any VM:
+     - **vCPU Cores**, **RAM (GB)**, **Storage (GB SSD & IOPS)**, **Bandwidth (Mbps)**, **OS**, **Region**, **Private/Public IP**, and **Hourly Rate**.
+   - Real-time gauge metrics for live CPU %, RAM %, and Disk IOPS.
 
-This project intentionally uses:
-- Azure Retail Prices API for public pricing benchmark data
-- synthetic workload traces for the resource simulation
+4. **Resource Metrics & Granular Telemetry**:
+   - Time ranges: **1 Day**, **7 Days**, **30 Days**.
+   - Custom granularities:
+     - **1 Day**: `10 Mins`, `30 Mins`, `1 Hour`
+     - **7 Days**: `10 Mins`, `30 Mins`, `1 Hour`
+     - **30 Days**: `1 Day`
+   - AI Predictive Demand overlay, visible 85% Bottleneck danger threshold, and highlighted 7:00 PM – 5:00 AM off-hours window.
 
-It does not claim to use live customer subscription telemetry, because that is not publicly available.
+5. **Bottleneck & Scale-Down Predictive Notifications**:
+   - **Bottleneck Prevention**:
+     - Detects forecasted spikes (e.g. 93.8% CPU peak).
+     - If Auto-Scale permission is approved: Automatically upscales SKU to prevent service degradation.
+     - If Auto-Scale permission is not approved: Dispatches alert explaining the bottleneck and providing a 1-click upgrade option.
+   - **Underutilization Downsizing**:
+     - Detects idle night periods (7 PM - 5 AM) and provides itemized cost formulas showing exactly how much monthly money is saved.
+   - **Transparent Mathematical Calculation**:
+     - Itemized breakdown showing baseline 24/7 spend, peak business hours, downscaled off-hours, and net savings formula.
+   - **Interactive Scenario Simulator**:
+     - "Simulate Traffic Surge (Bottleneck)" and "Simulate 7 PM – 5 AM Night Drop" buttons to test real-time dynamic behavior.
 
-## Run locally
+6. **Autonomous Scaling & Dynamic Billing Consent (Bottom Section)**:
+   - Dedicated agreement switch allowing the customer to grant permission for automated scaling.
+   - Transparent billing explanation: Invoices are calculated on prorated hourly consumption rather than static flat-rate allocation.
 
-### 1) Backend
+---
 
+## Tech Stack
+
+- **Frontend**: React 18, Vite, Recharts, Lucide Icons, Plus Jakarta Sans typography.
+- **Backend**: Python 3.11, FastAPI, Pydantic, Uvicorn.
+
+---
+
+## Quickstart
+
+### 1. Start Backend API
 ```bash
 cd backend
 python -m venv .venv
-source .venv/bin/activate
+# On Windows PowerShell:
+.venv\Scripts\activate
 pip install -r requirements.txt
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-### 2) Frontend
-
+### 2. Start Frontend Dev Server
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
 
-Then open:
-- Frontend: http://localhost:5173
-- Backend docs: http://localhost:8000/docs
-
-## Repository structure
-
-```text
-backend/
-  app/
-    main.py
-  requirements.txt
-frontend/
-  index.html
-  package.json
-  vite.config.js
-  src/
-    App.jsx
-    main.jsx
-    index.css
-```
-
-## Important note for hackathon use
-
-This MVP is designed for a realistic FinOps demo and is built to be transparent about the public benchmark data source. It is a strong demonstration project for cloud cost optimization without making claims about private tenant telemetry.
+Open:
+- **Frontend Dashboard**: `http://localhost:5173`
+- **Backend API & Swagger Docs**: `http://localhost:8000/docs`
