@@ -26,6 +26,19 @@ export interface CustomerProfile {
 }
 
 export const CUSTOMER_PROFILES: Record<string, CustomerProfile> = {
+  'cust-zenith': {
+    id: 'cust-zenith',
+    name: 'Zenith Platform Lead',
+    email: 'cloud-lead@zenithflow.in',
+    role: 'Principal Cloud Architect (Lead)',
+    customerId: 'cust-zenith',
+    customerName: 'ZenithFlow Technologies Pvt Ltd',
+    company: 'ZenithFlow Technologies (India SaaS Fleet)',
+    primaryRegion: 'Noida, Bangalore, Mumbai',
+    subscriptionId: 'sub-utho-zenith-india-prod-0924',
+    budgetLimit: 450000,
+    vmCount: 50,
+  },
   'cust-superadmin': {
     id: 'd0a49394-eafe-41f1-ae07-4ae3045e0c65',
     name: 'Super Admin',
@@ -37,7 +50,7 @@ export const CUSTOMER_PROFILES: Record<string, CustomerProfile> = {
     primaryRegion: 'Global Multi-Tenant',
     subscriptionId: 'sub-az-superadmin-root',
     budgetLimit: 500000,
-    vmCount: 10,
+    vmCount: 50,
   },
   'cust-northwind': {
     id: 'cust-northwind',
@@ -333,14 +346,14 @@ function startLiveTelemetryStream() {
 }
 
 // Global Singletons so state persists across routes and components
-const isLoggedIn = ref(!!savedProfile)
-const currentCustomer = ref<CustomerProfile>(savedProfile || CUSTOMER_PROFILES['cust-northwind'])
+const isLoggedIn = ref(true)
+const currentCustomer = ref<CustomerProfile>(savedProfile || CUSTOMER_PROFILES['cust-zenith'])
 const vms = ref<any[]>([])
 const selectedVmId = ref<string>('')
 const selectedVmDetail = ref<any>(null)
-const timeRange = ref<'1d' | '7d' | '30d'>('7d')
-const granularity = ref<string>('30m')
-const chartMetric = ref<'cpu' | 'ram' | 'disk'>('cpu')
+const timeRange = ref<'1d' | '7d' | '30d'>('30d')
+const granularity = ref<string>('1d')
+const chartMetric = ref<'cpu' | 'ram' | 'disk' | 'network'>('cpu')
 const currency = ref<'INR' | 'USD'>('INR')
 const toastMessage = ref<string>('')
 const nightHoursWindow = ref<number>(10) // 7 PM - 5 AM off-hours
@@ -349,6 +362,15 @@ const dockerHost = ref<string>('http://localhost:8001')
 const dockerConnected = ref<boolean>(false)
 const dockerHostInfo = ref<any>({})
 const dockerContainers = ref<any[]>([])
+
+// UTHO Multi-Filters & FinOps Persona
+const selectedRegion = ref<string>('all')
+const selectedEnvironment = ref<string>('all')
+const selectedResourceType = ref<string>('all')
+const selectedTeam = ref<string>('all')
+const currentPersona = ref<'engineer' | 'finance' | 'leadership'>('engineer')
+const fleetSummary = ref<any>(null)
+const fleetAlerts = ref<any[]>([])
 
 export const isSuperAdmin = computed(() => {
   const email = currentCustomer.value?.email?.toLowerCase().trim() || ''
@@ -439,6 +461,8 @@ export function useFinOps() {
         } else {
           selectedVmDetail.value = null
         }
+        await fetchFleetSummary()
+        await fetchAlerts()
         try {
           localStorage.setItem(`smartcloud_vms_${custId}`, JSON.stringify(fleetList))
         } catch (e) {
@@ -1043,10 +1067,152 @@ export function useFinOps() {
     })
   })
 
+  // Filtered VMs computed dynamically from active filters
+  const filteredVms = computed(() => {
+    return vms.value.filter((vm) => {
+      if (selectedRegion.value !== 'all' && !vm.region?.toLowerCase().includes(selectedRegion.value.toLowerCase())) {
+        return false
+      }
+      if (selectedEnvironment.value !== 'all' && vm.environment?.toLowerCase() !== selectedEnvironment.value.toLowerCase()) {
+        return false
+      }
+      if (selectedResourceType.value !== 'all' && (vm.type || 'VM').toLowerCase() !== selectedResourceType.value.toLowerCase()) {
+        return false
+      }
+      if (selectedTeam.value !== 'all' && !vm.team?.toLowerCase().includes(selectedTeam.value.toLowerCase())) {
+        return false
+      }
+      return true
+    })
+  })
+
+  const fetchFleetSummary = async () => {
+    try {
+      const res = await fetch(
+        `${API_BASE}/api/fleet/summary?customerId=${currentCustomer.value.customerId}&region=${selectedRegion.value}&environment=${selectedEnvironment.value}&resourceType=${selectedResourceType.value}&team=${selectedTeam.value}`
+      )
+      if (res.ok) {
+        fleetSummary.value = await res.json()
+      }
+    } catch (e) {
+      console.warn('Could not fetch fleet summary:', e)
+    }
+  }
+
+  const fetchAlerts = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/alerts?customerId=${currentCustomer.value.customerId}`)
+      if (res.ok) {
+        const data = await res.json()
+        fleetAlerts.value = data.alerts || []
+      }
+    } catch (e) {
+      console.warn('Could not fetch alerts:', e)
+    }
+  }
+
+  const toggleRecommendation = async (resId: string, accepted: boolean) => {
+    // Optimistically update local fleet list
+    vms.value = vms.value.map((v) => {
+      if (v.id === resId) {
+        const updatedSpend = accepted ? Math.max(0, v.currentSpend - (v.savings || 0)) : v.currentSpend
+        return {
+          ...v,
+          autoScaleEnabled: accepted,
+          projectedSpend: updatedSpend,
+          recommendation: {
+            ...(v.recommendation || {}),
+            accepted,
+          },
+        }
+      }
+      return v
+    })
+
+    if (selectedVmDetail.value && selectedVmDetail.value.id === resId) {
+      const updatedSpend = accepted
+        ? Math.max(0, selectedVmDetail.value.currentSpend - (selectedVmDetail.value.savings || 0))
+        : selectedVmDetail.value.currentSpend
+      selectedVmDetail.value = {
+        ...selectedVmDetail.value,
+        autoScaleEnabled: accepted,
+        projectedSpend: updatedSpend,
+        recommendation: {
+          ...(selectedVmDetail.value.recommendation || {}),
+          accepted,
+        },
+      }
+    }
+
+    try {
+      const res = await fetch(`${API_BASE}/api/recommendation/${resId}/toggle`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accepted }),
+      })
+      if (res.ok) {
+        await fetchFleetSummary()
+        showToast(
+          accepted
+            ? `Decision applied: Recommendation ACCEPTED for ${resId}`
+            : `Decision applied: Recommendation REJECTED for ${resId}`
+        )
+      }
+    } catch (e) {
+      console.warn('Toggle recommendation failed:', e)
+    }
+  }
+
+  const downloadTerraform = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/export/terraform?customerId=${currentCustomer.value.customerId}`)
+      if (res.ok) {
+        const data = await res.json()
+        const blob = new Blob([data.content], { type: 'text/plain' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = data.filename || 'smartcloud_finops_remediation.tf'
+        a.click()
+        URL.revokeObjectURL(url)
+        showToast('Terraform HCL plan downloaded successfully!')
+      }
+    } catch (e: any) {
+      showToast('Export failed: ' + e.message)
+    }
+  }
+
+  const downloadCliScript = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/export/cli?customerId=${currentCustomer.value.customerId}`)
+      if (res.ok) {
+        const data = await res.json()
+        const blob = new Blob([data.content], { type: 'text/plain' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = data.filename || 'smartcloud_remediation.sh'
+        a.click()
+        URL.revokeObjectURL(url)
+        showToast('Azure CLI runbook script downloaded!')
+      }
+    } catch (e: any) {
+      showToast('Export failed: ' + e.message)
+    }
+  }
+
   return {
     isLoggedIn,
     currentCustomer,
     vms,
+    filteredVms,
+    selectedRegion,
+    selectedEnvironment,
+    selectedResourceType,
+    selectedTeam,
+    currentPersona,
+    fleetSummary,
+    fleetAlerts,
     selectedVmId,
     selectedVmDetail,
     timeRange,
@@ -1073,6 +1239,11 @@ export function useFinOps() {
     setRangeAndGranularity,
     setSpecificGranularity,
     toggleAutoScale,
+    toggleRecommendation,
+    fetchFleetSummary,
+    fetchAlerts,
+    downloadTerraform,
+    downloadCliScript,
     switchCustomer,
     login,
     logout,

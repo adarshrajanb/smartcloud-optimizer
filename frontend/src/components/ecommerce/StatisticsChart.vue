@@ -154,10 +154,11 @@ const {
   setSpecificGranularity,
 } = useFinOps()
 
-const metricOptions: Array<{ id: 'cpu' | 'ram' | 'disk'; label: string }> = [
+const metricOptions: Array<{ id: 'cpu' | 'ram' | 'disk' | 'network'; label: string }> = [
   { id: 'cpu', label: 'vCPU %' },
   { id: 'ram', label: 'RAM %' },
   { id: 'disk', label: 'Disk IOPS' },
+  { id: 'network', label: 'Network MB/s' },
 ]
 
 const rangeOptions: Array<{ id: '1d' | '7d' | '30d'; label: string }> = [
@@ -190,12 +191,21 @@ const chartSeries = computed(() => {
   const seriesData = selectedVmDetail.value?.series || []
   if (seriesData.length === 0) return []
 
-  const actualKey = chartMetric.value === 'cpu' ? 'cpu' : chartMetric.value === 'ram' ? 'ram' : 'disk'
+  const actualKey =
+    chartMetric.value === 'cpu'
+      ? 'cpu'
+      : chartMetric.value === 'ram'
+      ? 'ram'
+      : chartMetric.value === 'network'
+      ? 'network'
+      : 'disk'
   const forecastKey =
     chartMetric.value === 'cpu'
       ? 'predictedCpu'
       : chartMetric.value === 'ram'
       ? 'predictedRam'
+      : chartMetric.value === 'network'
+      ? 'network'
       : 'predictedDisk'
 
   const actualPoints = seriesData.map((d: any) => {
@@ -230,7 +240,7 @@ const categories = computed(() => {
 })
 
 const chartOptions = computed(() => {
-  const unit = chartMetric.value === 'disk' ? ' IOPS' : '%'
+  const unit = chartMetric.value === 'disk' ? ' IOPS' : chartMetric.value === 'network' ? ' MB/s' : '%'
   const isNew = !!selectedVmDetail.value?.isNew
 
   return {
@@ -338,6 +348,14 @@ const chartOptions = computed(() => {
                 </span>
                 <span style="font-size:12px; font-weight:700; font-family:monospace; color:#D97706;">${forecastVal !== undefined ? forecastVal : '--'}${unit}</span>
               </div>
+              ${
+                chartMetric.value === 'network'
+                  ? `<div style="display:flex; align-items:center; justify-content:space-between; font-size:11px; color:#4B5563; padding-top:6px; margin-top:2px; border-top:1px dashed #E5E7EB;">
+                      <span>Traffic In: <strong style="color:#2563EB;">${pt.networkIn !== undefined ? pt.networkIn : (actualVal * 0.65).toFixed(1)} MB/s</strong></span>
+                      <span>Traffic Out: <strong style="color:#059669;">${pt.networkOut !== undefined ? pt.networkOut : (actualVal * 0.35).toFixed(1)} MB/s</strong></span>
+                    </div>`
+                  : ''
+              }
             </div>
           </div>
         `

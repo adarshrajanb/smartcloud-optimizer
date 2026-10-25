@@ -7,6 +7,13 @@ import json
 import urllib.request
 import uuid
 from app.persistence import load_store, save_store
+from app.utho_dataset import (
+    build_zenith_fleet,
+    get_zenith_customer,
+    get_zenith_alerts,
+    generate_terraform_hcl,
+    generate_bash_cli,
+)
 
 app = FastAPI(title="SmartCloud Optimizer FinOps API", version="2.1.0")
 
@@ -26,6 +33,10 @@ class LoginRequest(BaseModel):
 
 class AutoScaleToggleRequest(BaseModel):
     enabled: bool
+
+
+class RecommendationToggleRequest(BaseModel):
+    accepted: bool
 
 
 class BatchAutoScaleRequest(BaseModel):
@@ -656,9 +667,19 @@ if _persisted:
         USER_ACCOUNTS.update(_persisted["user_accounts"])
     if "audit_logs" in _persisted and isinstance(_persisted["audit_logs"], list) and len(_persisted["audit_logs"]) > 0:
         AUDIT_LOGS[:] = _persisted["audit_logs"]
-else:
-    persist_all()
 
+# Guarantee ZenithFlow 56-Resource Indian SaaS Fleet is fully registered
+_zenith_vms = build_zenith_fleet()
+for zid, zvm in _zenith_vms.items():
+    if zid not in VM_STATE:
+        VM_STATE[zid] = zvm
+    else:
+        # Preserve user toggle if already present, but ensure rich metadata
+        for k, v in zvm.items():
+            if k not in VM_STATE[zid]:
+                VM_STATE[zid][k] = v
+
+CUSTOMERS["cust-zenith"] = get_zenith_customer(_zenith_vms)
 
 
 def generate_time_series(vm_id: str, range_key: str = "7d", granularity_key: str = "30m") -> List[Dict[str, Any]]:
@@ -668,6 +689,15 @@ def generate_time_series(vm_id: str, range_key: str = "7d", granularity_key: str
     Supports granularity: 10m, 30m, 1h, 1d
     Guaranteed to generate between 24 and 112 points for instant rendering.
     """
+    # If resource has authentic pre-computed series (e.g. ZenithFlow 30-day realistic series)
+    if vm_id in VM_STATE and "series" in VM_STATE[vm_id] and VM_STATE[vm_id]["series"]:
+        full_series = VM_STATE[vm_id]["series"]
+        if range_key == "1d":
+            return full_series[-2:] if len(full_series) >= 2 else full_series
+        elif range_key == "7d":
+            return full_series[-7:] if len(full_series) >= 7 else full_series
+        return full_series
+
     now = datetime.utcnow().replace(microsecond=0)
 
     if range_key == "1d":
@@ -814,6 +844,8 @@ def generate_time_series(vm_id: str, range_key: str = "7d", granularity_key: str
             "disk": disk_val,
             "predictedDisk": pred_disk_val,
             "network": net_val,
+            "networkIn": round(net_val * 0.65, 1),
+            "networkOut": round(net_val * 0.35, 1),
             "isNightWindow": is_night_window,
             "isBottleneck": is_bottleneck or (pred_cpu_val >= 85.0),
             "bottleneckThreshold": 85.0,
@@ -835,6 +867,10 @@ def format_vm(vm_dict: Dict[str, Any]) -> Dict[str, Any]:
     vm_out["bandwidth"] = specs.get("bandwidthMbps", 8000)
     vm_out["hourlyRate"] = vm_dict.get("currentHourlyRate", 0.25)
     vm_out["ip"] = vm_dict.get("privateIp", "10.0.1.4")
+    vm_out["environment"] = vm_dict.get("environment", "prod")
+    vm_out["team"] = vm_dict.get("team", "Core Platform & DevOps")
+    vm_out["type"] = vm_dict.get("type", "VM")
+    vm_out["region"] = vm_dict.get("region", "Noida (North)")
 
     vid = vm_dict.get("id", "")
     if "cpuUsage" in vm_dict and "ramUsage" in vm_dict:
@@ -858,6 +894,15 @@ def format_vm(vm_dict: Dict[str, Any]) -> Dict[str, Any]:
         vm_out["ramUsage"] = 48.0
         vm_out["diskUsage"] = int(specs.get("maxIops", 6400) * 0.26)
 
+    # Ensure p95/p99 and network telemetry are present
+    vm_out["p95Cpu"] = vm_dict.get("p95Cpu", round(vm_out["cpuUsage"] * 1.35, 1))
+    vm_out["p99Cpu"] = vm_dict.get("p99Cpu", round(vm_out["cpuUsage"] * 1.5, 1))
+    vm_out["p95Ram"] = vm_dict.get("p95Ram", round(vm_out["ramUsage"] * 1.2, 1))
+    vm_out["avgCpu"] = vm_dict.get("avgCpu", vm_out["cpuUsage"])
+    vm_out["avgRam"] = vm_dict.get("avgRam", vm_out["ramUsage"])
+    vm_out["networkIn"] = vm_dict.get("networkIn", round(vm_out["cpuUsage"] * 0.4, 1))
+    vm_out["networkOut"] = vm_dict.get("networkOut", round(vm_out["cpuUsage"] * 0.25, 1))
+
     cid = vm_dict.get("customerId", "")
     cust_info = CUSTOMERS.get(cid, {})
     cust_name = vm_dict.get("customerName") or cust_info.get("name") or cust_info.get("company") or "Enterprise Client"
@@ -877,7 +922,11 @@ def health():
 @app.post("/api/login")
 def login(req: LoginRequest):
     username_lower = req.username.lower().strip()
-    if "contoso" in username_lower:
+    if "zenith" in username_lower:
+        customer_id = "cust-zenith"
+        user_name = "Zenith Platform Lead"
+        role = "Lead Cloud Architect"
+    elif "contoso" in username_lower:
         customer_id = "cust-contoso"
         user_name = "Dr. Sarah Lin"
         role = "Cloud Architect"
@@ -885,16 +934,16 @@ def login(req: LoginRequest):
         customer_id = "cust-fabrikam"
         user_name = "Alex Vance"
         role = "VP of Infrastructure"
-    elif "admin" in username_lower or "northwind" in username_lower:
-        customer_id = "cust-northwind"
-        user_name = "Adarsh (FinOps Lead)"
-        role = "FinOps Administrator"
+    elif "admin" in username_lower:
+        customer_id = "cust-zenith"
+        user_name = "Adarsh (Lead FinOps Architect)"
+        role = "Super FinOps Administrator"
     else:
-        customer_id = "cust-northwind"
+        customer_id = "cust-zenith"
         user_name = req.username.split("@")[0].title() if "@" in req.username else req.username.title()
-        role = "Infrastructure Manager"
+        role = "FinOps Administrator"
 
-    customer = CUSTOMERS.get(customer_id, CUSTOMERS["cust-northwind"])
+    customer = CUSTOMERS.get(customer_id, CUSTOMERS["cust-zenith"])
     return {
         "success": True,
         "token": f"jwt-token-{customer_id}-{datetime.utcnow().timestamp()}",
@@ -916,13 +965,26 @@ def get_customers():
 
 @app.get("/api/vms")
 def get_vms(
-    customerId: Optional[str] = "cust-northwind",
+    customerId: Optional[str] = "cust-zenith",
     userId: Optional[str] = None,
     isSuperAdmin: Optional[bool] = False,
+    region: Optional[str] = None,
+    environment: Optional[str] = None,
+    resourceType: Optional[str] = None,
+    team: Optional[str] = None,
 ):
     is_admin = isSuperAdmin or customerId in ("all", "super_admin", "cust-superadmin", "cust-admin")
     if is_admin:
         all_vms = [format_vm(v) for v in VM_STATE.values()]
+        if region and region != "all":
+            all_vms = [v for v in all_vms if region.lower() in v.get("region", "").lower()]
+        if environment and environment != "all":
+            all_vms = [v for v in all_vms if v.get("environment", "").lower() == environment.lower()]
+        if resourceType and resourceType != "all":
+            all_vms = [v for v in all_vms if v.get("type", "VM").lower() == resourceType.lower()]
+        if team and team != "all":
+            all_vms = [v for v in all_vms if team.lower() in v.get("team", "").lower()]
+
         return {
             "customer": {
                 "id": "cust-superadmin",
@@ -960,6 +1022,16 @@ def get_vms(
             formatted = format_vm(v_data)
             if not any(x["id"] == vid for x in vms_out):
                 vms_out.append(formatted)
+
+    # Multi-filter support for UTHO deliverables (Region, Environment, Resource Type, Team)
+    if region and region != "all":
+        vms_out = [v for v in vms_out if region.lower() in v.get("region", "").lower()]
+    if environment and environment != "all":
+        vms_out = [v for v in vms_out if v.get("environment", "").lower() == environment.lower()]
+    if resourceType and resourceType != "all":
+        vms_out = [v for v in vms_out if v.get("type", "VM").lower() == resourceType.lower()]
+    if team and team != "all":
+        vms_out = [v for v in vms_out if team.lower() in v.get("team", "").lower()]
 
     return {"customer": customer, "vms": vms_out, "isSuperAdmin": False}
 
@@ -1588,17 +1660,17 @@ def get_audit_logs(customerId: Optional[str] = None):
 
 @app.get("/api/dashboard/{customer_id}")
 def get_dashboard(customer_id: str):
-    customer = CUSTOMERS.get(customer_id, CUSTOMERS["cust-northwind"])
+    customer = CUSTOMERS.get(customer_id, CUSTOMERS["cust-zenith"])
     vm_ids = customer["vmIds"]
     vms = [VM_STATE[vid] for vid in vm_ids if vid in VM_STATE]
 
-    total_current = sum(vm["currentSpend"] for vm in vms)
-    total_projected = sum(vm["projectedSpend"] for vm in vms)
-    total_savings = sum(vm["savings"] for vm in vms if vm["autoScaleEnabled"])
+    total_current = sum(vm.get("currentSpend", 0) for vm in vms)
+    total_projected = sum(vm.get("projectedSpend", vm.get("currentSpend", 0)) for vm in vms)
+    total_savings = sum(vm.get("savings", 0) for vm in vms if vm.get("autoScaleEnabled", False))
 
     days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
     weekly_spend_comparison = []
-    base_daily = total_current / 30.0
+    base_daily = total_current / 30.0 if total_current > 0 else 1.0
     for idx, day in enumerate(days):
         is_weekend = idx >= 5
         cur_day_spend = round(base_daily * (0.85 if is_weekend else 1.05), 0)
@@ -1618,13 +1690,233 @@ def get_dashboard(customer_id: str):
             "projectedSpend": total_projected,
             "savings": total_savings,
             "activeVmsCount": len(vms),
-            "bottlenecksCount": sum(1 for vm in vms if vm["status"] == "Bottleneck Warning"),
-            "downsizeOpportunities": sum(1 for vm in vms if vm["recommendation"]["type"] == "downsize"),
-            "autoscaleActiveCount": sum(1 for vm in vms if vm["autoScaleEnabled"]),
+            "bottlenecksCount": sum(1 for vm in vms if vm.get("status") == "Bottleneck Warning"),
+            "downsizeOpportunities": sum(1 for vm in vms if vm.get("recommendation", {}).get("type") in ("downsize", "schedule_offhours", "terminate_idle", "delete_orphan")),
+            "autoscaleActiveCount": sum(1 for vm in vms if vm.get("autoScaleEnabled", False)),
         },
         "weeklyComparison": weekly_spend_comparison,
         "vms": vms,
     }
+
+
+# =============================================================================
+# UTHO Challenge Mandatory Endpoints: Recommendations, Fleet, Alerts & Exports
+# =============================================================================
+
+@app.post("/api/recommendation/{res_id}/toggle")
+def toggle_recommendation(res_id: str, payload: RecommendationToggleRequest):
+    """
+    Accept or Reject an individual recommendation.
+    Dynamically recalculates projected spend, triggers audit logging, and updates totals live.
+    """
+    if res_id not in VM_STATE:
+        raise HTTPException(status_code=404, detail=f"Resource {res_id} not found")
+
+    vm = VM_STATE[res_id]
+    rec = vm.setdefault("recommendation", {})
+    rec["accepted"] = payload.accepted
+
+    current_spend = vm.get("currentSpend", 0)
+    savings = vm.get("savings", 0)
+
+    if payload.accepted:
+        vm["projectedSpend"] = max(0, current_spend - savings)
+        vm["autoScaleEnabled"] = True
+    else:
+        vm["projectedSpend"] = current_spend
+        vm["autoScaleEnabled"] = False
+
+    action_label = "ACCEPTED_RECOMMENDATION" if payload.accepted else "REJECTED_RECOMMENDATION"
+    record_audit_log(
+        action=action_label,
+        vm_id=res_id,
+        vm_name=vm.get("name", res_id),
+        prev_spend=current_spend,
+        cur_spend=vm["projectedSpend"],
+        prev_spec=vm.get("vmSize", "Standard"),
+        cur_spec=rec.get("targetSku", vm.get("vmSize", "Standard")),
+        reason=f"Interactive toggle: User {'accepted' if payload.accepted else 'rejected'} recommendation '{rec.get('title')}'",
+        category="Interactive FinOps Decision",
+    )
+
+    persist_all()
+
+    return {
+        "success": True,
+        "resId": res_id,
+        "accepted": payload.accepted,
+        "currentSpend": vm["currentSpend"],
+        "projectedSpend": vm["projectedSpend"],
+        "savings": savings if payload.accepted else 0,
+        "resource": format_vm(vm),
+    }
+
+
+@app.get("/api/fleet/summary")
+def get_fleet_summary(
+    customerId: Optional[str] = "cust-zenith",
+    region: Optional[str] = None,
+    environment: Optional[str] = None,
+    resourceType: Optional[str] = None,
+    team: Optional[str] = None,
+):
+    """
+    Aggregates full fleet metrics for ZenithFlow SaaS enterprise:
+    - Before vs. after spend per environment and in total
+    - Multi-filter breakdowns (Region: Noida, Bangalore, Mumbai; Environment: prod, staging, dev; Team)
+    - 40% 6-month bill increase decomposition
+    - Sustainability impact (kWh and kg CO2e)
+    """
+    vms_pool = [v for v in VM_STATE.values() if customerId == "all" or v.get("customerId") == customerId]
+
+    if region and region != "all":
+        vms_pool = [v for v in vms_pool if region.lower() in v.get("region", "").lower()]
+    if environment and environment != "all":
+        vms_pool = [v for v in vms_pool if v.get("environment", "").lower() == environment.lower()]
+    if resourceType and resourceType != "all":
+        vms_pool = [v for v in vms_pool if v.get("type", "VM").lower() == resourceType.lower()]
+    if team and team != "all":
+        vms_pool = [v for v in vms_pool if team.lower() in v.get("team", "").lower()]
+
+    total_current = sum(v.get("currentSpend", 0) for v in vms_pool)
+    total_projected = sum(v.get("projectedSpend", v.get("currentSpend", 0)) for v in vms_pool)
+    total_savings = total_current - total_projected
+
+    # Environment Breakdown
+    env_breakdown = {}
+    for env in ["prod", "staging", "dev"]:
+        env_vms = [v for v in vms_pool if v.get("environment") == env]
+        cur = sum(v.get("currentSpend", 0) for v in env_vms)
+        proj = sum(v.get("projectedSpend", v.get("currentSpend", 0)) for v in env_vms)
+        env_breakdown[env] = {
+            "count": len(env_vms),
+            "currentSpend": cur,
+            "projectedSpend": proj,
+            "savings": cur - proj,
+            "savingsPercent": round((cur - proj) / cur * 100, 1) if cur > 0 else 0,
+        }
+
+    # Region Breakdown
+    region_breakdown = {}
+    for r in ["Noida (North)", "Bangalore (South)", "Mumbai (West)"]:
+        r_vms = [v for v in vms_pool if r.split(" ")[0].lower() in v.get("region", "").lower()]
+        cur = sum(v.get("currentSpend", 0) for v in r_vms)
+        proj = sum(v.get("projectedSpend", v.get("currentSpend", 0)) for v in r_vms)
+        region_breakdown[r] = {
+            "count": len(r_vms),
+            "currentSpend": cur,
+            "projectedSpend": proj,
+            "savings": cur - proj,
+        }
+
+    # Resource Type Breakdown
+    type_breakdown = {}
+    for t in ["VM", "Volume", "IP"]:
+        t_vms = [v for v in vms_pool if v.get("type", "VM") == t]
+        cur = sum(v.get("currentSpend", 0) for v in t_vms)
+        proj = sum(v.get("projectedSpend", v.get("currentSpend", 0)) for v in t_vms)
+        type_breakdown[t] = {
+            "count": len(t_vms),
+            "currentSpend": cur,
+            "projectedSpend": proj,
+            "savings": cur - proj,
+        }
+
+    # Orphaned Resources Breakdown
+    orphaned_vms = [v for v in vms_pool if "Orphaned" in v.get("status", "")]
+    orphaned_spend = sum(v.get("currentSpend", 0) for v in orphaned_vms)
+
+    # Sustainability Metrics
+    # Assumption: ~0.08 kWh/hr saved per optimized vCPU, Indian CEA grid factor 0.82 kg CO2e / kWh
+    total_cores_optimized = sum(v.get("cores", 2) for v in vms_pool if v.get("recommendation", {}).get("accepted", False))
+    monthly_kwh_saved = round(total_cores_optimized * 0.08 * 730 * 0.45, 1)
+    monthly_co2_kg_saved = round(monthly_kwh_saved * 0.82, 1)
+
+    return {
+        "customerId": customerId,
+        "totalResources": len(vms_pool),
+        "currentSpend": total_current,
+        "projectedSpend": total_projected,
+        "monthlySavings": total_savings,
+        "savingsPercentage": round(total_savings / total_current * 100, 1) if total_current > 0 else 0,
+        "annualizedSavings": total_savings * 12,
+        "budgetLimit": 450000,
+        "budgetVariance": total_current - 450000,
+        "costGrowthSixMonths": {
+            "previousMonthlySpend": 295000,
+            "currentMonthlySpend": total_current,
+            "growthPercentage": 40.0,
+            "growthDrivers": [
+                {"category": "Dev 24/7 Weekend Idling", "amount": 45200, "pct": 38.3},
+                {"category": "Over-Provisioned Core Sizing", "amount": 60200, "pct": 51.0},
+                {"category": "Orphaned Disks & Unallocated IPs", "amount": 12600, "pct": 10.7},
+            ],
+        },
+        "environments": env_breakdown,
+        "regions": region_breakdown,
+        "resourceTypes": type_breakdown,
+        "orphanedResources": {
+            "count": len(orphaned_vms),
+            "totalSpend": orphaned_spend,
+        },
+        "sustainability": {
+            "kwhSavedMonthly": monthly_kwh_saved,
+            "co2KgSavedMonthly": monthly_co2_kg_saved,
+            "treesEquivalent": round(monthly_co2_kg_saved / 21.7, 1),
+        },
+    }
+
+
+@app.get("/api/alerts")
+def get_alerts(customerId: Optional[str] = "cust-zenith"):
+    """Returns the 4 mandatory UTHO alert types with structured plain-language explanations."""
+    zenith_pool = {k: v for k, v in VM_STATE.items() if customerId == "all" or v.get("customerId") == customerId}
+    alerts = get_zenith_alerts(zenith_pool)
+    return {
+        "alerts": alerts,
+        "count": len(alerts),
+        "unreadCount": sum(1 for a in alerts if a.get("severity") in ("CRITICAL", "HIGH", "ALERT")),
+    }
+
+
+@app.get("/api/export/terraform")
+def export_terraform(customerId: Optional[str] = "cust-zenith"):
+    """Exports valid, downloadable Terraform HCL for fleet remediation."""
+    zenith_pool = {k: v for k, v in VM_STATE.items() if customerId == "all" or v.get("customerId") == customerId}
+    hcl_code = generate_terraform_hcl(zenith_pool)
+    return {
+        "format": "hcl",
+        "filename": "smartcloud_finops_remediation.tf",
+        "content": hcl_code,
+    }
+
+
+@app.get("/api/export/cli")
+def export_cli(customerId: Optional[str] = "cust-zenith"):
+    """Exports executable Azure CLI Bash script for 1-click remediation."""
+    zenith_pool = {k: v for k, v in VM_STATE.items() if customerId == "all" or v.get("customerId") == customerId}
+    script_code = generate_bash_cli(zenith_pool)
+    return {
+        "format": "bash",
+        "filename": "smartcloud_remediation.sh",
+        "content": script_code,
+    }
+
+
+@app.get("/api/assumptions")
+def get_assumptions():
+    """Returns the full Assumptions and Methodology document for in-app transparency."""
+    return {
+        "version": "1.0.0",
+        "title": "SmartCloud Optimizer - FinOps Sizing & Cost Methodology",
+        "pricingModel": "Azure / Indian Cloud Pricing (₹84.00 / USD reference rate)",
+        "p95ProtectionRule": "Instances with p95 CPU > 75% or p99 CPU > 85% are explicitly locked against downsizing regardless of low 24-hr averages to prevent latency/timeout failures.",
+        "weekendOffHoursRule": "Dev and non-prod workloads are marked for hibernation between 8:00 PM and 8:00 AM weekdays and all 48 weekend hours (108 total idle hours/week).",
+        "orphanedVolumeRule": "Volumes with 0 IOPS for ≥ 30 days are flagged as orphaned. Proposed remediation: snapshot archive to cold storage followed by volume deletion.",
+        "unallocatedIpRule": "Public IPv4 addresses unassociated with running instances for ≥ 7 days incur idle penalties (₹1.92/hr) and are flagged for pool release.",
+        "carbonModel": "Central Electricity Authority (CEA) India grid factor: 0.82 kg CO2e per kWh; average cloud server idle power: 0.08 kWh/vCPU/hour.",
+    }
+
 
 
 @app.post("/api/docker/connect")

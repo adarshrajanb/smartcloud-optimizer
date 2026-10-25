@@ -2,51 +2,30 @@
   <div
     class="overflow-hidden rounded-2xl border border-gray-200 bg-white px-4 pb-4 pt-5 dark:border-gray-800 dark:bg-white/[0.03] sm:px-6 shadow-sm"
   >
+    <!-- Header & Fleet Context -->
     <div class="flex flex-col gap-3 mb-5 sm:flex-row sm:items-center sm:justify-between">
       <div>
         <div class="flex items-center gap-2">
           <h3 class="text-base font-bold text-gray-900 dark:text-white">
-            {{ isSuperAdmin ? 'Super Admin Multi-Tenant Fleet' : 'Customer Azure VM Fleet' }}
+            {{ isSuperAdmin ? 'Super Admin Multi-Tenant Fleet' : 'Enterprise Cloud Infrastructure Fleet' }}
           </h3>
           <span
             v-if="isSuperAdmin"
             class="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded font-mono bg-purple-100 dark:bg-purple-950/50 text-purple-700 dark:text-purple-300 font-bold border border-purple-200 dark:border-purple-800/40"
           >
-            Super Admin Mode
+            Super Admin
           </span>
-          <span class="text-xs px-2 py-0.5 rounded font-mono bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300">
-            {{ vms.length }} Managed Instances
+          <span class="text-xs px-2.5 py-0.5 rounded-full font-mono font-bold bg-brand-50 text-brand-700 dark:bg-brand-950/50 dark:text-brand-300 border border-brand-200/60 dark:border-brand-800/40">
+            {{ filteredFleet.length }} of {{ vms.length }} Resources Active
           </span>
         </div>
         <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-          <span v-if="isSuperAdmin">
-            Full cross-tenant visibility across all registered customers and assigned VMs.
-          </span>
-          <span v-else>
-            Tenant: <strong class="text-gray-700 dark:text-gray-300 font-mono">{{ currentCustomer.subscriptionId }}</strong> ({{ currentCustomer.customerName }})
-          </span>
+          Tenant: <strong class="text-gray-700 dark:text-gray-300 font-mono">{{ currentCustomer.subscriptionId }}</strong> ({{ currentCustomer.customerName }} • {{ currentCustomer.primaryRegion }})
         </p>
       </div>
 
-      <!-- Fleet Filters & Action Buttons -->
+      <!-- Action Buttons -->
       <div class="flex flex-wrap items-center gap-2">
-        <div class="inline-flex items-center gap-0.5 rounded-lg bg-gray-100 p-0.5 dark:bg-gray-900 border border-gray-200 dark:border-gray-800">
-          <button
-            v-for="filter in ['all', 'bottlenecks', 'downsize', 'healthy']"
-            :key="filter"
-            @click="activeFilter = filter"
-            :class="[
-              activeFilter === filter
-                ? 'shadow-xs text-brand-600 dark:text-white bg-white dark:bg-gray-800 font-semibold'
-                : 'text-gray-500 dark:text-gray-400 hover:text-gray-800',
-              'px-2.5 py-1 text-xs rounded-md uppercase tracking-wider capitalize transition-all',
-            ]"
-          >
-            {{ filter }}
-          </button>
-        </div>
-
-        <!-- Super Admin: Database Monitoring Table Modal -->
         <button
           v-if="isSuperAdmin"
           @click="openMonitoringModal"
@@ -58,7 +37,7 @@
             <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
             <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
           </svg>
-          Supabase Monitoring Table
+          Supabase DB
         </button>
 
         <button
@@ -69,7 +48,7 @@
             <polyline points="23 4 23 10 17 10"></polyline>
             <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
           </svg>
-          Batch Enable All
+          Batch Accept All
         </button>
 
         <button
@@ -80,40 +59,144 @@
             <line x1="12" y1="5" x2="12" y2="19"></line>
             <line x1="5" y1="12" x2="19" y2="12"></line>
           </svg>
-          Buy / Deploy VM
+          Deploy VM
         </button>
       </div>
     </div>
 
+    <!-- Multi-Dimensional FinOps Filter Toolbar (UTHO Deliverables) -->
+    <div class="mb-5 p-3.5 rounded-xl bg-gray-50/80 dark:bg-gray-900/60 border border-gray-100 dark:border-gray-800 space-y-3">
+      <!-- Row 1: Region & Environment Filters -->
+      <div class="flex flex-wrap items-center justify-between gap-3 text-xs">
+        <!-- Region Filter Pills -->
+        <div class="flex items-center gap-1.5">
+          <span class="text-gray-400 font-semibold text-[11px] uppercase tracking-wider mr-1">Region:</span>
+          <button
+            v-for="r in ['all', 'Noida', 'Bangalore', 'Mumbai']"
+            :key="r"
+            @click="selectedRegion = r"
+            :class="[
+              selectedRegion === r
+                ? 'bg-brand-500 text-white font-bold shadow-xs'
+                : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-100 border border-gray-200 dark:border-gray-700',
+              'px-2.5 py-1 rounded-lg text-xs transition-all cursor-pointer'
+            ]"
+          >
+            {{ r === 'all' ? 'All Regions' : r }}
+          </button>
+        </div>
+
+        <!-- Environment Filter Pills -->
+        <div class="flex items-center gap-1.5">
+          <span class="text-gray-400 font-semibold text-[11px] uppercase tracking-wider mr-1">Env:</span>
+          <button
+            v-for="env in ['all', 'prod', 'staging', 'dev']"
+            :key="env"
+            @click="selectedEnvironment = env"
+            :class="[
+              selectedEnvironment === env
+                ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900 font-bold shadow-xs'
+                : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-100 border border-gray-200 dark:border-gray-700',
+              'px-2.5 py-1 rounded-lg text-xs uppercase transition-all cursor-pointer'
+            ]"
+          >
+            {{ env === 'all' ? 'All Envs' : env }}
+          </button>
+        </div>
+      </div>
+
+      <!-- Row 2: Resource Type & Status / Anomaly Filters -->
+      <div class="flex flex-wrap items-center justify-between gap-3 text-xs pt-2 border-t border-gray-200/60 dark:border-gray-800">
+        <!-- Resource Type Filter -->
+        <div class="flex items-center gap-1.5">
+          <span class="text-gray-400 font-semibold text-[11px] uppercase tracking-wider mr-1">Type:</span>
+          <button
+            v-for="t in ['all', 'VM', 'Volume', 'IP']"
+            :key="t"
+            @click="selectedResourceType = t"
+            :class="[
+              selectedResourceType === t
+                ? 'bg-purple-600 text-white font-bold shadow-xs'
+                : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-100 border border-gray-200 dark:border-gray-700',
+              'px-2.5 py-1 rounded-lg text-xs transition-all cursor-pointer'
+            ]"
+          >
+            {{ t === 'all' ? 'All Resources' : t === 'VM' ? 'VMs (Compute)' : t === 'Volume' ? 'Block Storage' : 'Public IPs' }}
+          </button>
+        </div>
+
+        <!-- Status Signal Quick Filter -->
+        <div class="flex items-center gap-1.5">
+          <span class="text-gray-400 font-semibold text-[11px] uppercase tracking-wider mr-1">Signal:</span>
+          <button
+            v-for="f in ['all', 'bottlenecks', 'downsize', 'orphaned', 'anomalies']"
+            :key="f"
+            @click="activeStatusFilter = f"
+            :class="[
+              activeStatusFilter === f
+                ? 'bg-brand-50 text-brand-700 dark:bg-brand-900/40 dark:text-brand-300 font-bold border border-brand-300 dark:border-brand-700'
+                : 'text-gray-500 hover:text-gray-800 dark:text-gray-400',
+              'px-2 py-0.5 rounded text-xs uppercase tracking-wider capitalize transition-all cursor-pointer'
+            ]"
+          >
+            {{ f }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Fleet Inventory Table -->
     <div class="max-w-full overflow-x-auto custom-scrollbar">
       <table class="min-w-full divide-y divide-gray-100 dark:divide-gray-800">
         <thead>
           <tr class="text-left text-[11px] font-semibold uppercase tracking-wider text-gray-400">
-            <th class="py-3 px-3">Virtual Machine</th>
-            <th v-if="isSuperAdmin" class="py-3 px-3">Customer / Owner</th>
-            <th class="py-3 px-3">Hardware Specs</th>
-            <th class="py-3 px-3">Live Telemetry</th>
+            <th class="py-3 px-3">Resource & Spec</th>
+            <th class="py-3 px-3">Region & Env</th>
+            <th class="py-3 px-3">Team / Service</th>
+            <th class="py-3 px-3">Telemetry & Peak (p95)</th>
             <th class="py-3 px-3">Status & Signal</th>
-            <th class="py-3 px-3">Current Spend</th>
+            <th class="py-3 px-3">Baseline Spend</th>
             <th class="py-3 px-3">Projected Spend</th>
-            <th class="py-3 px-3 text-center">Auto-Scaling</th>
-            <th class="py-3 px-3 text-right">Action</th>
+            <th class="py-3 px-3 text-center">Decision Action</th>
+            <th class="py-3 px-3 text-right">Inspect</th>
           </tr>
         </thead>
         <tbody class="divide-y divide-gray-100 dark:divide-gray-800 text-xs">
           <tr
-            v-for="vm in filteredVms"
+            v-for="vm in filteredFleet"
             :key="vm.id"
             :class="[
               'transition-colors hover:bg-gray-50/80 dark:hover:bg-white/[0.02]',
               selectedVmId === vm.id ? 'bg-brand-50/40 dark:bg-brand-500/[0.06]' : ''
             ]"
           >
-            <!-- Name & Size -->
+            <!-- Name, ID & Type Icon -->
             <td class="py-3 px-3">
               <div class="flex items-center gap-2.5">
-                <div class="w-8 h-8 rounded-lg bg-gray-100 dark:bg-gray-800 flex items-center justify-center font-bold text-gray-700 dark:text-gray-300">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <div
+                  :class="[
+                    'w-8 h-8 rounded-lg flex items-center justify-center font-bold',
+                    vm.type === 'Volume'
+                      ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
+                      : vm.type === 'IP'
+                      ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
+                      : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'
+                  ]"
+                >
+                  <!-- Volume Icon -->
+                  <svg v-if="vm.type === 'Volume'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
+                    <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path>
+                    <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path>
+                  </svg>
+                  <!-- IP Icon -->
+                  <svg v-else-if="vm.type === 'IP'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="2" y1="12" x2="22" y2="12"></line>
+                    <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+                  </svg>
+                  <!-- VM Compute Icon -->
+                  <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
                     <rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect>
                   </svg>
@@ -123,64 +206,64 @@
                     {{ vm.name }}
                     <span v-if="selectedVmId === vm.id" class="text-[9px] px-1 py-0.2 rounded bg-brand-500 text-white font-normal">Active</span>
                   </div>
-                  <span class="text-[11px] font-mono text-gray-500 dark:text-gray-400">{{ vm.size }} • <span class="text-[10px] text-gray-400">{{ vm.id }}</span></span>
+                  <span class="text-[11px] font-mono text-gray-500 dark:text-gray-400">
+                    {{ vm.size }} • <span class="text-[10px] text-gray-400">{{ vm.id }}</span>
+                  </span>
                 </div>
               </div>
             </td>
 
-            <!-- Customer / Owner Column (Prominently displayed for Super Admin) -->
-            <td v-if="isSuperAdmin" class="py-3 px-3">
-              <div class="flex items-center gap-1.5">
-                <span class="w-2 h-2 rounded-full bg-purple-500"></span>
-                <span class="font-semibold text-gray-900 dark:text-white">
-                  {{ vm.customerName || vm.ownerName || 'Enterprise Tenant' }}
-                </span>
+            <!-- Region & Env -->
+            <td class="py-3 px-3">
+              <div class="font-medium text-gray-900 dark:text-white flex items-center gap-1.5">
+                {{ vm.region }}
               </div>
-              <span class="text-[11px] font-mono text-gray-400 block mt-0.5">
-                {{ vm.customerId || vm.userId || 'cust-portal' }}
+              <span
+                :class="[
+                  'text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.2 rounded font-mono mt-0.5 inline-block',
+                  vm.environment === 'prod'
+                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                    : vm.environment === 'staging'
+                    ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
+                    : 'bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300'
+                ]"
+              >
+                {{ vm.environment }}
               </span>
             </td>
 
-            <!-- Specs -->
-            <td class="py-3 px-3 text-gray-600 dark:text-gray-300">
-              <div class="font-medium text-gray-900 dark:text-white">{{ vm.cores }} vCPUs • {{ vm.ram }} GB RAM</div>
-              <div class="text-[11px] text-gray-400">{{ vm.storage }} GB SSD • {{ vm.maxIops }} IOPS</div>
+            <!-- Team / Owner -->
+            <td class="py-3 px-3 text-gray-700 dark:text-gray-300 font-medium">
+              <div>{{ vm.team || 'Platform & DevOps' }}</div>
+              <span class="text-[10px] text-gray-400 font-mono">{{ vm.privateIp || 'VNet Internal' }}</span>
             </td>
 
-            <!-- Live Usages -->
+            <!-- Live Telemetry & Peak Safety -->
             <td class="py-3 px-3">
               <div class="flex items-center gap-2">
                 <span :class="vm.cpuUsage > 80 ? 'text-error-600 font-bold' : 'text-gray-700 dark:text-gray-300'">
                   CPU: {{ vm.cpuUsage }}%
                 </span>
-                <span class="text-gray-400">•</span>
-                <span class="text-gray-600 dark:text-gray-400">RAM: {{ vm.ramUsage }}%</span>
+                <span class="text-gray-300 dark:text-gray-600">•</span>
+                <span :class="vm.p95Cpu > 75 ? 'text-purple-600 font-bold' : 'text-gray-500 dark:text-gray-400'">
+                  p95: {{ vm.p95Cpu ?? ((vm.cpuUsage || 20) * 1.35).toFixed(1) }}%
+                </span>
               </div>
-              <div class="w-24 bg-gray-100 dark:bg-gray-800 h-1.5 rounded-full overflow-hidden mt-1">
-                <div
-                  :style="{ width: `${vm.cpuUsage}%` }"
-                  :class="[
-                    'h-full rounded-full',
-                    vm.cpuUsage > 80 ? 'bg-error-500' : 'bg-brand-500'
-                  ]"
-                ></div>
+              <div class="text-[10px] text-gray-400 font-mono mt-0.5">
+                Net: {{ vm.networkIn || 0 }} in / {{ vm.networkOut || 0 }} out MB/s
               </div>
             </td>
 
-            <!-- Status Signal -->
+            <!-- Status & Pattern Signal -->
             <td class="py-3 px-3">
               <span
-                v-if="vm.isNew"
-                class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-success-50 text-success-700 dark:bg-success-950/40 dark:text-success-300 border border-success-200/60 dark:border-success-800/40"
-              >
-                <span class="w-1.5 h-1.5 rounded-full bg-success-500 animate-pulse"></span>
-                Newly Provisioned (Live)
-              </span>
-              <span
-                v-else
                 :class="[
                   'inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold',
-                  vm.status === 'Bottleneck Warning'
+                  vm.status === 'Runaway Anomaly'
+                    ? 'bg-error-100 text-error-800 dark:bg-error-950/50 dark:text-error-300 animate-pulse'
+                    : vm.status?.includes('Orphaned')
+                    ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300'
+                    : vm.status === 'Bottleneck Warning'
                     ? 'bg-error-50 text-error-700 dark:bg-error-950/40 dark:text-error-300'
                     : vm.recommendation?.type === 'downsize'
                     ? 'bg-brand-50 text-brand-700 dark:bg-brand-950/40 dark:text-brand-300'
@@ -191,7 +274,7 @@
               </span>
             </td>
 
-            <!-- Current Spend -->
+            <!-- Baseline Spend -->
             <td class="py-3 px-3 font-mono font-medium text-gray-900 dark:text-white">
               {{ formatAmount(vm.currentSpend) }}
             </td>
@@ -201,19 +284,21 @@
               {{ formatAmount(vm.projectedSpend) }}
             </td>
 
-            <!-- Auto-Scale Permission Switch -->
+            <!-- Individual Accept / Reject Toggle Button -->
             <td class="py-3 px-3 text-center">
-              <label class="relative inline-flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  :checked="vm.autoScaleEnabled"
-                  @change="toggleAutoScale(vm.id, !vm.autoScaleEnabled)"
-                  class="sr-only peer"
-                />
-                <div
-                  class="w-9 h-5 bg-gray-200 peer-focus:outline-hidden rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all dark:border-gray-600 peer-checked:bg-brand-500"
-                ></div>
-              </label>
+              <button
+                v-if="vm.savings > 0 || vm.recommendation"
+                @click="toggleRecommendation(vm.id, !vm.recommendation?.accepted)"
+                :class="[
+                  'px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer shadow-2xs',
+                  vm.recommendation?.accepted
+                    ? 'bg-success-600 hover:bg-success-700 text-white'
+                    : 'bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300'
+                ]"
+              >
+                {{ vm.recommendation?.accepted ? '✓ Accepted' : '+ Accept' }}
+              </button>
+              <span v-else class="text-gray-400 font-mono text-[11px]">Optimal</span>
             </td>
 
             <!-- Action -->
@@ -221,49 +306,29 @@
               <button
                 @click="selectVm(vm.id)"
                 :class="[
-                  'px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer',
+                  'px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer',
                   selectedVmId === vm.id
                     ? 'bg-brand-500 text-white shadow-xs'
                     : 'bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300'
                 ]"
               >
-                {{ selectedVmId === vm.id ? 'Inspecting' : 'Inspect Specs' }}
+                {{ selectedVmId === vm.id ? 'Inspecting' : 'Inspect' }}
               </button>
             </td>
           </tr>
 
-          <!-- Empty State when Filter Matches 0 Instances -->
-          <tr v-if="filteredVms.length === 0">
-            <td :colspan="isSuperAdmin ? 9 : 8" class="py-10 text-center text-xs text-gray-500 dark:text-gray-400">
+          <!-- Empty State -->
+          <tr v-if="filteredFleet.length === 0">
+            <td colspan="9" class="py-12 text-center text-xs text-gray-500 dark:text-gray-400">
               <div class="flex flex-col items-center justify-center gap-2">
-                <div class="w-10 h-10 rounded-full bg-success-50 dark:bg-success-950/30 flex items-center justify-center text-success-600 dark:text-success-400">
-                  <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
-                  </svg>
-                </div>
                 <span class="font-bold text-gray-800 dark:text-gray-200 text-sm">
-                  {{
-                    activeFilter === 'bottlenecks'
-                      ? 'No Bottlenecked Instances Detected'
-                      : activeFilter === 'downsize'
-                      ? 'No Downsize Recommendations Needed'
-                      : 'No Matching Instances in this View'
-                  }}
-                </span>
-                <span class="text-xs text-gray-500 max-w-sm">
-                  {{
-                    activeFilter === 'bottlenecks'
-                      ? 'All virtual machines are currently operating with healthy resource headroom.'
-                      : activeFilter === 'downsize'
-                      ? 'Your compute resources are properly allocated for current workload demands.'
-                      : 'Switch back to "All" to inspect your entire fleet.'
-                  }}
+                  No resources match the selected filters
                 </span>
                 <button
-                  @click="activeFilter = 'all'"
-                  class="mt-1 px-3 py-1 rounded-lg text-xs font-semibold bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors cursor-pointer"
+                  @click="resetFilters"
+                  class="mt-2 px-3 py-1.5 rounded-lg text-xs font-semibold bg-brand-500 text-white hover:bg-brand-600 transition-colors cursor-pointer"
                 >
-                  View All {{ vms.length }} VMs
+                  Reset All Filters
                 </button>
               </div>
             </td>
@@ -299,7 +364,7 @@
       class="fixed inset-0 z-99999 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4"
     >
       <div
-        class="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl max-w-6xl w-full p-6 shadow-2xl overflow-y-auto max-h-[92vh] relative"
+        class="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl max-w-5xl w-full p-6 shadow-2xl overflow-y-auto max-h-[90vh] relative"
       >
         <button
           @click="showMonitoringModal = false"
@@ -311,103 +376,29 @@
           </svg>
         </button>
 
-        <div class="mb-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-4 border-b border-gray-100 dark:border-gray-800">
-          <div>
-            <div class="flex items-center gap-2">
-              <span class="p-2 rounded-lg bg-purple-100 dark:bg-purple-950/50 text-purple-600 dark:text-purple-300 font-bold">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                  <path d="M4 7v10c0 2 1.5 3 3.5 3h9c2 0 3.5-1 3.5-3V7c0-2-1.5-3-3.5-3h-9C5.5 4 4 5 4 7z"></path>
-                  <path d="M9 12h6"></path>
-                  <path d="M9 16h6"></path>
-                </svg>
-              </span>
-              <div>
-                <h3 class="text-lg font-bold text-gray-900 dark:text-white">
-                  Supabase User & VM Monitoring Table
-                </h3>
-                <p class="text-xs text-gray-500 dark:text-gray-400">
-                  Direct database view: <code>public.user_accounts</code> • User ID, Email, Password & Assigned VMs
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div class="flex items-center gap-2">
-            <button
-              @click="refreshMonitoring"
-              class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors cursor-pointer"
-            >
-              Refresh Table
-            </button>
-            <a
-              href="/supabase_schema.sql"
-              target="_blank"
-              class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-purple-600 hover:bg-purple-700 text-white transition-colors"
-            >
-              View SQL Schema
-            </a>
-          </div>
-        </div>
+        <h3 class="text-base font-bold text-gray-900 dark:text-white mb-2">
+          Supabase Database Monitoring Table
+        </h3>
+        <p class="text-xs text-gray-500 mb-4">
+          Direct query of public.user_accounts and public.vms in the cloud database.
+        </p>
 
         <div class="overflow-x-auto">
           <table class="min-w-full divide-y divide-gray-100 dark:divide-gray-800 text-xs">
             <thead>
-              <tr class="text-left font-semibold text-gray-400 uppercase tracking-wider text-[11px] bg-gray-50/50 dark:bg-gray-800/20">
-                <th class="py-3 px-3">User ID</th>
-                <th class="py-3 px-3">Email ID</th>
-                <th class="py-3 px-3">Password</th>
-                <th class="py-3 px-3">Customer / Organization</th>
-                <th class="py-3 px-3">Role</th>
-                <th class="py-3 px-3">Assigned VMs</th>
-                <th class="py-3 px-3 text-right">Created</th>
+              <tr class="text-left font-mono text-gray-400">
+                <th class="py-2">Email</th>
+                <th class="py-2">Customer Name</th>
+                <th class="py-2">Role</th>
+                <th class="py-2">Allocated VMs</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-gray-100 dark:divide-gray-800 font-mono">
-              <tr v-for="u in monitoringUsers" :key="u.user_id" class="hover:bg-gray-50/50 dark:hover:bg-white/[0.02]">
-                <td class="py-3 px-3 text-purple-600 dark:text-purple-400 font-medium">
-                  {{ u.user_id }}
-                </td>
-                <td class="py-3 px-3 text-gray-800 dark:text-gray-200 font-sans font-medium">
-                  {{ u.email_id || u.email }}
-                </td>
-                <td class="py-3 px-3 text-amber-600 dark:text-amber-400">
-                  {{ u.password || '••••••••' }}
-                </td>
-                <td class="py-3 px-3 text-gray-700 dark:text-gray-300 font-sans">
-                  {{ u.customer_name || u.company || 'Enterprise' }}
-                </td>
-                <td class="py-3 px-3 font-sans">
-                  <span
-                    :class="[
-                      'px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider',
-                      u.role === 'super_admin'
-                        ? 'bg-purple-100 text-purple-700 dark:bg-purple-950/50 dark:text-purple-300'
-                        : 'bg-blue-100 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300'
-                    ]"
-                  >
-                    {{ u.role || 'customer' }}
-                  </span>
-                </td>
-                <td class="py-3 px-3 font-sans">
-                  <div v-if="Array.isArray(u.assigned_vms) && u.assigned_vms.length > 0" class="flex flex-wrap gap-1">
-                    <span
-                      v-for="(vmItem, idx) in u.assigned_vms"
-                      :key="idx"
-                      class="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-[10px] font-mono text-gray-700 dark:text-gray-300"
-                    >
-                      {{ typeof vmItem === 'object' ? (vmItem.name || vmItem.id) : vmItem }}
-                    </span>
-                  </div>
-                  <span v-else class="text-gray-400 italic text-[11px]">0 VMs allocated</span>
-                </td>
-                <td class="py-3 px-3 text-right text-gray-400 text-[11px]">
-                  {{ u.created_at ? new Date(u.created_at).toLocaleDateString() : 'Active' }}
-                </td>
-              </tr>
-              <tr v-if="monitoringUsers.length === 0">
-                <td colspan="7" class="py-8 text-center text-gray-400 italic">
-                  No accounts synced yet. Sign in or register to record users into Supabase.
-                </td>
+              <tr v-for="u in monitoringUsers" :key="u.user_id">
+                <td class="py-2.5 font-bold">{{ u.email_id }}</td>
+                <td class="py-2.5">{{ u.customer_name }}</td>
+                <td class="py-2.5">{{ u.role }}</td>
+                <td class="py-2.5">{{ u.assigned_vms?.length || 0 }} resources</td>
               </tr>
             </tbody>
           </table>
@@ -430,58 +421,82 @@ const monitoringUsers = ref<any[]>([])
 const {
   vms,
   selectedVmId,
+  selectedRegion,
+  selectedEnvironment,
+  selectedResourceType,
   currentCustomer,
   selectVm,
-  toggleAutoScale,
+  toggleRecommendation,
   formatAmount,
   showToast,
   loadFleet,
 } = useFinOps()
 
-const activeFilter = ref('all')
+const activeStatusFilter = ref('all')
 
-const filteredVms = computed(() => {
-  if (activeFilter.value === 'bottlenecks') {
-    return vms.value.filter(
-      (v) => (v.status === 'Bottleneck Warning' || v.cpuUsage >= 80 || v.ramUsage >= 85) && !v.isNew
-    )
-  }
-  if (activeFilter.value === 'downsize') {
-    return vms.value.filter(
-      (v) => !v.isNew && v.recommendation?.type === 'downsize' && v.status !== 'Bottleneck Warning' && v.cpuUsage < 80
-    )
-  }
-  if (activeFilter.value === 'healthy') {
-    return vms.value.filter(
-      (v) => v.status !== 'Bottleneck Warning' && v.cpuUsage < 80 && v.ramUsage < 85
-    )
-  }
-  return vms.value
+const filteredFleet = computed(() => {
+  return vms.value.filter((vm) => {
+    // 1. Region filter
+    if (selectedRegion.value !== 'all' && !vm.region?.toLowerCase().includes(selectedRegion.value.toLowerCase())) {
+      return false
+    }
+    // 2. Environment filter
+    if (selectedEnvironment.value !== 'all' && vm.environment?.toLowerCase() !== selectedEnvironment.value.toLowerCase()) {
+      return false
+    }
+    // 3. Resource Type filter
+    if (selectedResourceType.value !== 'all' && (vm.type || 'VM').toLowerCase() !== selectedResourceType.value.toLowerCase()) {
+      return false
+    }
+    // 4. Status signal filter
+    if (activeStatusFilter.value === 'bottlenecks') {
+      return (vm.status === 'Bottleneck Warning' || vm.cpuUsage >= 80 || vm.ramUsage >= 85) && !vm.isNew
+    }
+    if (activeStatusFilter.value === 'downsize') {
+      return vm.recommendation?.type in { downsize: 1, schedule_offhours: 1 } || vm.savings > 0
+    }
+    if (activeStatusFilter.value === 'orphaned') {
+      return vm.status?.includes('Orphaned') || vm.type === 'Volume' || vm.type === 'IP'
+    }
+    if (activeStatusFilter.value === 'anomalies') {
+      return vm.status === 'Runaway Anomaly' || vm.cpuUsage > 95
+    }
+    return true
+  })
 })
+
+const resetFilters = () => {
+  selectedRegion.value = 'all'
+  selectedEnvironment.value = 'all'
+  selectedResourceType.value = 'all'
+  activeStatusFilter.value = 'all'
+}
 
 const openMonitoringModal = async () => {
   showMonitoringModal.value = true
-  await refreshMonitoring()
-}
-
-const refreshMonitoring = async () => {
   monitoringUsers.value = await loadUserMonitoringData()
 }
 
 const toggleBatchAutoScale = async () => {
   try {
-    const allEnabled = vms.value.every((v) => v.autoScaleEnabled)
-    const targetStatus = !allEnabled
+    const allAccepted = vms.value.every((v) => v.recommendation?.accepted)
+    const target = !allAccepted
     await fetch(`${API_BASE}/api/fleet/autoscale-batch`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         customerId: currentCustomer.value.customerId,
-        enabled: targetStatus,
+        enabled: target,
       }),
     })
-    await loadFleet(currentCustomer.value.customerId)
-    showToast(`Batch updated all ${vms.value.length} VMs to auto-scaling: ${targetStatus ? 'Enabled' : 'Disabled'}`)
+    for (const v of vms.value) {
+      if (v.recommendation) {
+        v.recommendation.accepted = target
+        v.autoScaleEnabled = target
+        v.projectedSpend = target ? Math.max(0, v.currentSpend - (v.savings || 0)) : v.currentSpend
+      }
+    }
+    showToast(`Batch updated all ${vms.value.length} resources: ${target ? 'All Accepted' : 'All Reverted'}`)
   } catch (err) {
     console.warn('Batch update fallback', err)
   }
